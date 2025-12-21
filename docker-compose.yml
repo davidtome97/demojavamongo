@@ -8,8 +8,9 @@ services:
       MONGO_INITDB_DATABASE: ${DB_NAME:-demo}
     networks:
       - demo-net
+    volumes:
+      - mongo_data:/data/db
     restart: unless-stopped
-    # En producción, recomendado NO exponer Mongo:
     # ports:
     #   - "${DB_PORT:-27017}:27017"
 
@@ -18,13 +19,9 @@ services:
     container_name: demo-java-app
     environment:
       SPRING_PROFILES_ACTIVE: mongo
-
       DB_ENGINE: mongo
-
-      # Dentro de Docker Compose, el host debe ser el nombre del servicio
       DB_HOST: mongo
       DB_PORT: 27017
-
       DB_NAME: ${DB_NAME:-demo}
       DB_USER: ${DB_USER:-demo}
       DB_PASSWORD: ${DB_PASSWORD:-demo}
@@ -40,3 +37,6 @@ services:
 networks:
   demo-net:
     driver: bridge
+
+volumes:
+  mongo_data:
