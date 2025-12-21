@@ -91,6 +91,7 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          set -e
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
@@ -126,12 +127,15 @@ jobs:
 
       IMAGE_TAG: ${{ github.sha }}
 
-      # DB secrets genéricos (el motor ya va “fijado” en docker-compose.yml)
+      # Mongo DB secrets
+      DB_ENGINE: ${{ secrets.DB_ENGINE }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
       DB_NAME: ${{ secrets.DB_NAME }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
-      # Opcional (si no existe, usará 8081)
+      # App
       APP_PORT: ${{ secrets.APP_PORT }}
 
     steps:
@@ -139,6 +143,7 @@ jobs:
 
       - name: Preparar clave SSH
         run: |
+          set -e
           mkdir -p ~/.ssh
           printf "%s" "${EC2_LLAVE_SSH}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
@@ -151,6 +156,7 @@ jobs:
 
       - name: Subir docker-compose.yml a EC2
         run: |
+          set -e
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
 
@@ -159,26 +165,28 @@ jobs:
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
             set -e
 
-            # 1) Instalar AWS CLI si falta
+            # AWS CLI (para login ECR)
             if ! command -v aws >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y awscli
             fi
 
-            # 2) Instalar Docker si falta
+            # Docker
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y docker.io
               sudo systemctl enable --now docker
             fi
 
-            # 3) Instalar docker compose plugin si falta
+            # Docker Compose: preferimos 'docker compose' pero si no existe, instalamos el binario plugin.
             if ! sudo docker compose version >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y docker-compose-plugin
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+                -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
             fi
 
-            # 4) Exportar variables (con defaults)
+            # Variables (con defaults)
             export AWS_ACCESS_KEY_ID='${AWS_ACCESS_KEY_ID}'
             export AWS_SECRET_ACCESS_KEY='${AWS_SECRET_ACCESS_KEY}'
             export AWS_REGION='${AWS_REGION}'
@@ -190,7 +198,11 @@ jobs:
             export DB_USER='${DB_USER}'
             export DB_PASSWORD='${DB_PASSWORD}'
 
-            export APP_PORT='${APP_PORT:-8081}'
+            if [ -n '${APP_PORT}' ]; then
+              export APP_PORT='${APP_PORT}'
+            else
+              export APP_PORT='8081'
+            fi
 
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
