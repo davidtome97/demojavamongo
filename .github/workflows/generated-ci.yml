@@ -155,44 +155,52 @@ jobs:
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
 
       - name: Ejecutar despliegue en EC2
-        env:
-          APP_PORT_LOCAL: ${{ secrets.APP_PORT || '8081' }}
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
             set -e
 
-            # awscli (para login ECR)
+            # 1) Instalar AWS CLI si falta
             if ! command -v aws >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y awscli
             fi
 
-            # docker compose plugin
-            if ! docker compose version >/dev/null 2>&1; then
-              mkdir -p ~/.docker/cli-plugins
-              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
-                -o ~/.docker/cli-plugins/docker-compose
-              chmod +x ~/.docker/cli-plugins/docker-compose
+            # 2) Instalar Docker si falta
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io
+              sudo systemctl enable --now docker
             fi
 
+            # 3) Instalar docker compose plugin si falta
+            if ! sudo docker compose version >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker-compose-plugin
+            fi
+
+            # 4) Exportar variables (con defaults)
             export AWS_ACCESS_KEY_ID='${AWS_ACCESS_KEY_ID}'
             export AWS_SECRET_ACCESS_KEY='${AWS_SECRET_ACCESS_KEY}'
             export AWS_REGION='${AWS_REGION}'
 
+            export DB_ENGINE='${DB_ENGINE}'
+            export DB_HOST='${DB_HOST}'
+            export DB_PORT='${DB_PORT}'
             export DB_NAME='${DB_NAME}'
             export DB_USER='${DB_USER}'
             export DB_PASSWORD='${DB_PASSWORD}'
-            export APP_PORT='${APP_PORT_LOCAL}'
+
+            export APP_PORT='${APP_PORT:-8081}'
 
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
 
             echo \"Login ECR: \${ECR_REGISTRY}\"
             aws ecr get-login-password --region \"${AWS_REGION}\" \
-              | docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
+              | sudo docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
 
             cd ~/app
-            docker compose -f docker-compose.yml pull
-            docker compose -f docker-compose.yml up -d --remove-orphans
-            docker image prune -f
+            sudo docker compose -f docker-compose.yml pull
+            sudo docker compose -f docker-compose.yml up -d --remove-orphans
+            sudo docker image prune -f
           "
