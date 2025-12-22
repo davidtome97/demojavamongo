@@ -18,9 +18,11 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: mongo
       DB_ENGINE: mongo
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_DATA_MONGODB: DEBUG
+      LOGGING_LEVEL_COM_MONGODB: DEBUG
 
       # 🔑 CLAVE ABSOLUTA → Spring SIEMPRE usa esto si existe
-      SPRING_DATA_MONGODB_URI: ${MONGODB_URI:-}
+      MONGODB_URI: ${SPRING_DATA_MONGODB_URI:-${MONGODB_URI:-}}
 
       # ⬇️ Solo se usan en LOCAL (cuando no hay URI)
       DB_HOST: ${DB_HOST:-mongo}
