@@ -1,9 +1,7 @@
 services:
-  # Mongo LOCAL (solo se levanta si no hay MONGODB_URI)
   mongo:
     image: mongo:8
     container_name: demojava-mongo
-    profiles: ["local"]   # <-- solo con perfil local
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${DB_USER:-demo}
       MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD:-demo}
@@ -13,9 +11,6 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
-    # En producción recomendado NO exponer Mongo:
-    # ports:
-    #   - "${DB_PORT:-27017}:27017"
 
   demo-java:
     image: ${IMAGE_URI:-demo-java-local}
@@ -24,10 +19,8 @@ services:
       SPRING_PROFILES_ACTIVE: mongo
       DB_ENGINE: mongo
 
-      # ✅ REMOTO: si existe, Spring lo usa directamente
-      SPRING_DATA_MONGODB_URI: ${MONGODB_URI:-}
-
-      # ✅ LOCAL (fallback): si no hay URI, usa host/port
+      # Local o remoto (si pones DB_HOST apuntando a Atlas NO sirve,
+      # Atlas debe ir por URI -> SPRING_DATA_MONGODB_URI)
       DB_HOST: ${DB_HOST:-mongo}
       DB_PORT: ${DB_PORT:-27017}
 
@@ -35,13 +28,13 @@ services:
       DB_USER: ${DB_USER:-demo}
       DB_PASSWORD: ${DB_PASSWORD:-demo}
 
+      # ✅ Atlas aquí (si existe, Spring usará esto)
+      SPRING_DATA_MONGODB_URI: ${SPRING_DATA_MONGODB_URI:-}
+
     ports:
       - "${APP_PORT:-8081}:8081"
-
-    # Solo depende de mongo en local
     depends_on:
-      mongo:
-        condition: service_started
+      - mongo
     networks:
       - demo-net
     restart: unless-stopped
