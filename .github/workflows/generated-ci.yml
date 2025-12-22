@@ -128,10 +128,9 @@ jobs:
       EC2_LLAVE_SSH: ${{ secrets.EC2_LLAVE_SSH }}
       EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
 
-      # ⬇️ para deploy por tag, usa el nombre del tag (v1.0.0) como IMAGE_TAG
+      # Deploy por tag -> usamos el nombre del tag (v1.0.0)
       IMAGE_TAG: ${{ github.ref_name }}
 
-      # Mongo / App vars
       DB_ENGINE: ${{ secrets.DB_ENGINE }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
@@ -192,7 +191,7 @@ jobs:
 
             cd ~/app
 
-            # ✅ Crear .env persistente (compose lo leerá SIEMPRE, incluso tras reboot o down/up manual)
+            # .env persistente
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
 
@@ -212,7 +211,7 @@ MONGODB_URI=${MONGODB_URI}
 APP_PORT=${APP_PORT:-8081}
 EOF
 
-            # ✅ Fix DNS docker (para Atlas) — solo si no existe ya
+            # Fix DNS docker (Atlas)
             if [ ! -f /etc/docker/daemon.json ]; then
               echo '{\"dns\":[\"1.1.1.1\",\"8.8.8.8\"]}' | sudo tee /etc/docker/daemon.json >/dev/null
               sudo systemctl restart docker
@@ -222,14 +221,12 @@ EOF
             aws ecr get-login-password --region \"${AWS_REGION}\" \
               | sudo docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
 
-            # Evitar conflictos con container_name si ya existen contenedores antiguos
             sudo docker rm -f demojava-mongo demo-java-app 2>/dev/null || true
 
-            # ✅ Usar SIEMPRE el .env persistente
             sudo docker compose --env-file .env -f docker-compose.yml pull
             sudo docker compose --env-file .env -f docker-compose.yml up -d --remove-orphans
             sudo docker image prune -f
 
-            echo '--- ENV en contenedor ---'
-            sudo docker exec -it demo-java-app printenv | egrep 'IMAGE_URI|MONGODB_URI|DB_HOST|DB_PORT|DB_NAME|DB_USER|SPRING_PROFILES_ACTIVE' || true
+            echo '--- .env generado ---'
+            cat -n .env || true
           "
