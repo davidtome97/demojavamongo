@@ -191,25 +191,25 @@ jobs:
 
             cd ~/app
 
-            # .env persistente
-            ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
-            IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
+          # .env persistente
+          ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
-            cat > .env <<EOF
-IMAGE_URI=\${IMAGE_URI}
-
-SPRING_PROFILES_ACTIVE=mongo
-DB_ENGINE=${DB_ENGINE}
-DB_HOST=${DB_HOST}
-DB_PORT=${DB_PORT}
-DB_NAME=${DB_NAME}
-DB_USER=${DB_USER}
-DB_PASSWORD=${DB_PASSWORD}
-
-MONGODB_URI=${MONGODB_URI}
-
-APP_PORT=${APP_PORT:-8081}
-EOF
+          printf "%s\n" \
+          "IMAGE_URI=${IMAGE_URI}" \
+          "" \
+          "SPRING_PROFILES_ACTIVE=mongo" \
+          "DB_ENGINE=${DB_ENGINE}" \
+          "DB_HOST=${DB_HOST}" \
+          "DB_PORT=${DB_PORT}" \
+          "DB_NAME=${DB_NAME}" \
+          "DB_USER=${DB_USER}" \
+          "DB_PASSWORD=${DB_PASSWORD}" \
+          "" \
+          "MONGODB_URI=${MONGODB_URI}" \
+          "" \
+          "APP_PORT=${APP_PORT:-8081}" \
+          > .env
 
             # Fix DNS docker (Atlas)
             if [ ! -f /etc/docker/daemon.json ]; then
