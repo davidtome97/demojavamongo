@@ -92,21 +92,34 @@ jobs:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
+          SHA_TAG: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}   # "tag" o "branch"
         run: |
           set -e
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
-          echo "Building image: ${IMAGE_URI}"
-          docker build -t "${IMAGE_URI}" .
+          IMAGE_SHA="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHA_TAG}"
+          echo "Building image: ${IMAGE_SHA}"
+          docker build -t "${IMAGE_SHA}" .
 
           echo "Tagging latest..."
-          docker tag "${IMAGE_URI}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+          docker tag "${IMAGE_SHA}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+          # ✅ Si es un tag (v1.2.4), lo subimos también
+          if [ "${REF_TYPE}" = "tag" ]; then
+            IMAGE_TAGGED="${ECR_REGISTRY}/${ECR_REPOSITORY}:${REF_NAME}"
+            echo "Tagging release: ${IMAGE_TAGGED}"
+            docker tag "${IMAGE_SHA}" "${IMAGE_TAGGED}"
+          fi
 
           echo "Pushing images..."
-          docker push "${IMAGE_URI}"
+          docker push "${IMAGE_SHA}"
           docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+          if [ "${REF_TYPE}" = "tag" ]; then
+            docker push "${IMAGE_TAGGED}"
+          fi
 
           echo "Done ✅"
 
