@@ -2,17 +2,16 @@ services:
   mongo:
     image: mongo:8
     container_name: demojava-mongo
+    profiles: ["local"]   # 👈 solo se levanta si activas el profile local
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${DB_USER:-demo}
       MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD:-demo}
       MONGO_INITDB_DATABASE: ${DB_NAME:-demo}
-    volumes:
-      - mongo_data:/data/db
     networks:
       - demo-net
+    volumes:
+      - mongo_data:/data/db
     restart: unless-stopped
-    profiles:
-      - local   # ⬅️ SOLO para local
 
   demo-java:
     image: ${IMAGE_URI:-demo-java-local}
@@ -21,8 +20,15 @@ services:
       SPRING_PROFILES_ACTIVE: mongo
       DB_ENGINE: mongo
 
-      # 🔑 LA CLAVE
-      MONGODB_URI: ${MONGODB_URI:-mongodb://demo:demo@mongo:27017/demo}
+      # ✅ Si existe MONGODB_URI, usaremos Atlas. Si no, usa host/port.
+      MONGODB_URI: ${MONGODB_URI:-}
+
+      DB_HOST: ${DB_HOST:-mongo}
+      DB_PORT: ${DB_PORT:-27017}
+
+      DB_NAME: ${DB_NAME:-demo}
+      DB_USER: ${DB_USER:-demo}
+      DB_PASSWORD: ${DB_PASSWORD:-demo}
 
     ports:
       - "${APP_PORT:-8081}:8081"
