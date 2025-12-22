@@ -91,6 +91,7 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          set -e
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
@@ -126,12 +127,15 @@ jobs:
 
       IMAGE_TAG: ${{ github.sha }}
 
-      # DB secrets genéricos (el motor ya va “fijado” en docker-compose.yml)
+      # DB secrets (válido para mongo/mysql/postgres)
+      DB_ENGINE: ${{ secrets.DB_ENGINE }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
       DB_NAME: ${{ secrets.DB_NAME }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
-      # Opcional (si no existe, usará 8081)
+      # App
       APP_PORT: ${{ secrets.APP_PORT }}
 
     steps:
@@ -139,6 +143,7 @@ jobs:
 
       - name: Preparar clave SSH
         run: |
+          set -e
           mkdir -p ~/.ssh
           printf "%s" "${EC2_LLAVE_SSH}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
@@ -151,48 +156,68 @@ jobs:
 
       - name: Subir docker-compose.yml a EC2
         run: |
+          set -e
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
 
       - name: Ejecutar despliegue en EC2
-        env:
-          APP_PORT_LOCAL: ${{ secrets.APP_PORT || '8081' }}
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
             set -e
 
-            # awscli (para login ECR)
+            # AWS CLI (para login ECR)
             if ! command -v aws >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y awscli
             fi
 
-            # docker compose plugin
-            if ! docker compose version >/dev/null 2>&1; then
-              mkdir -p ~/.docker/cli-plugins
-              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
-                -o ~/.docker/cli-plugins/docker-compose
-              chmod +x ~/.docker/cli-plugins/docker-compose
+            # Docker
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io
+              sudo systemctl enable --now docker
             fi
 
+            # Docker Compose plugin (sin apt): instalar binario si no existe
+            if ! sudo docker compose version >/dev/null 2>&1; then
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+                -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            fi
+
+            # Variables (con defaults)
             export AWS_ACCESS_KEY_ID='${AWS_ACCESS_KEY_ID}'
             export AWS_SECRET_ACCESS_KEY='${AWS_SECRET_ACCESS_KEY}'
             export AWS_REGION='${AWS_REGION}'
 
+            export DB_ENGINE='${DB_ENGINE}'
+            export DB_HOST='${DB_HOST}'
+            export DB_PORT='${DB_PORT}'
             export DB_NAME='${DB_NAME}'
             export DB_USER='${DB_USER}'
             export DB_PASSWORD='${DB_PASSWORD}'
-            export APP_PORT='${APP_PORT_LOCAL}'
+
+            if [ -n '${APP_PORT}' ]; then
+              export APP_PORT='${APP_PORT}'
+            else
+              export APP_PORT='8081'
+            fi
 
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
 
             echo \"Login ECR: \${ECR_REGISTRY}\"
             aws ecr get-login-password --region \"${AWS_REGION}\" \
-              | docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
+              | sudo -E docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
 
             cd ~/app
-            docker compose -f docker-compose.yml pull
-            docker compose -f docker-compose.yml up -d --remove-orphans
-            docker image prune -f
+
+            # Genérico: apaga el stack anterior (sirve para cualquier nombre de contenedor/motor)
+            sudo -E docker compose -f docker-compose.yml down --remove-orphans || true
+
+            # IMPORTANTE: -E para que docker compose vea IMAGE_URI/DB_*/APP_PORT
+            sudo -E docker compose -f docker-compose.yml pull
+            sudo -E docker compose -f docker-compose.yml up -d --remove-orphans
+            sudo docker image prune -f
           "
