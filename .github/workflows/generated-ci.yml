@@ -22,6 +22,7 @@ jobs:
 
       - name: Build & Test (Maven)
         run: |
+          set -e
           if [ -f "./mvnw" ]; then
             chmod +x ./mvnw
             ./mvnw -B -f pom.xml test
@@ -48,6 +49,7 @@ jobs:
           SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
         run: |
+          set -e
           if [ -z "$SONAR_TOKEN" ] || [ -z "$SONAR_PROJECT_KEY" ] || [ -z "$SONAR_ORGANIZATION" ]; then
             echo "Sonar secrets not configured. Skipping Sonar analysis."
             exit 0
@@ -124,9 +126,10 @@ jobs:
       EC2_LLAVE_SSH: ${{ secrets.EC2_LLAVE_SSH }}
       EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
 
-      IMAGE_TAG: ${{ github.sha }}
+      # ✅ deploy por tag: usa el nombre del tag (v1.2.3) como IMAGE_TAG
+      IMAGE_TAG: ${{ github.ref_name }}
 
-      # Mongo DB secrets
+      # Mongo/App secrets (Atlas opcional)
       DB_ENGINE: ${{ secrets.DB_ENGINE }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
@@ -135,7 +138,6 @@ jobs:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
 
-      # App
       APP_PORT: ${{ secrets.APP_PORT }}
 
     steps:
@@ -154,13 +156,14 @@ jobs:
             ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
           fi
 
-      - name: Subir docker-compose.yml a EC2
+      - name: Subir docker-compose (local + remote) a EC2
         run: |
           set -e
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.local.yml  "$EC2_USER@$EC2_HOST:~/app/docker-compose.local.yml"
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.remote.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.remote.yml"
 
-      - name: Ejecutar despliegue en EC2
+      - name: Ejecutar despliegue en EC2 (Atlas si hay MONGODB_URI, si no local)
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
             set -e
@@ -178,7 +181,7 @@ jobs:
               sudo systemctl enable --now docker
             fi
 
-            # Docker Compose plugin (sin apt): instalar binario si no existe
+            # Docker Compose plugin
             if ! sudo docker compose version >/dev/null 2>&1; then
               sudo mkdir -p /usr/local/lib/docker/cli-plugins
               sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
@@ -186,7 +189,14 @@ jobs:
               sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
             fi
 
-            # Variables (con defaults)
+            # ✅ Fix DNS de Docker (Atlas SRV)
+            sudo mkdir -p /etc/docker
+            if [ ! -f /etc/docker/daemon.json ]; then
+              echo '{\"dns\":[\"1.1.1.1\",\"8.8.8.8\"]}' | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+
+            # Variables
             export AWS_ACCESS_KEY_ID='${AWS_ACCESS_KEY_ID}'
             export AWS_SECRET_ACCESS_KEY='${AWS_SECRET_ACCESS_KEY}'
             export AWS_REGION='${AWS_REGION}'
@@ -198,12 +208,7 @@ jobs:
             export DB_USER='${DB_USER}'
             export DB_PASSWORD='${DB_PASSWORD}'
             export MONGODB_URI='${MONGODB_URI}'
-
-            if [ -n '${APP_PORT}' ]; then
-              export APP_PORT='${APP_PORT}'
-            else
-              export APP_PORT='8081'
-            fi
+            export APP_PORT='${APP_PORT:-8081}'
 
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
@@ -214,11 +219,23 @@ jobs:
 
             cd ~/app
 
-            # Evitar conflictos con container_name si ya existen contenedores antiguos
+            # Elegir compose: remoto si hay URI, si no local
+            if [ -n \"\${MONGODB_URI}\" ]; then
+              COMPOSE_FILE='docker-compose.remote.yml'
+              echo '✅ Usando MongoDB Atlas (remote)'
+            else
+              COMPOSE_FILE='docker-compose.local.yml'
+              echo '✅ Usando MongoDB local (EC2)'
+            fi
+
+            # Limpieza opcional de contenedores viejos
             sudo docker rm -f demojava-mongo demo-java-app 2>/dev/null || true
 
-            # IMPORTANTE: -E para que docker compose vea IMAGE_URI/DB_*/APP_PORT
-            sudo -E docker compose -f docker-compose.yml pull
-            sudo -E docker compose -f docker-compose.yml up -d --remove-orphans
+            # Deploy
+            sudo -E docker compose -f \"\${COMPOSE_FILE}\" pull
+            sudo -E docker compose -f \"\${COMPOSE_FILE}\" up -d --remove-orphans
             sudo docker image prune -f
+
+            echo '--- ENV en contenedor ---'
+            sudo docker exec -it demo-java-app printenv | egrep 'SPRING_DATA_MONGODB_URI|MONGODB_URI|DB_HOST|DB_PORT|DB_NAME|DB_USER|APP_PORT' || true
           "
