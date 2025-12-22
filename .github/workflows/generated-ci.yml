@@ -19,6 +19,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: maven
 
       - name: Build & Test (Maven)
         run: |
@@ -41,6 +42,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: maven
 
       - name: SonarCloud Analysis (optional)
         env:
@@ -126,7 +128,7 @@ jobs:
       EC2_LLAVE_SSH: ${{ secrets.EC2_LLAVE_SSH }}
       EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
 
-      # ✅ deploy por tag: usa el nombre del tag (v1.2.3) como IMAGE_TAG
+      # ✅ deploy por tag
       IMAGE_TAG: ${{ github.ref_name }}
 
       # Mongo/App secrets (Atlas opcional)
@@ -156,7 +158,7 @@ jobs:
             ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
           fi
 
-      - name: Subir docker-compose (local + remote) a EC2
+      - name: Subir docker-compose local+remote a EC2
         run: |
           set -e
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
@@ -168,7 +170,7 @@ jobs:
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
             set -e
 
-            # AWS CLI (para login ECR)
+            # AWS CLI
             if ! command -v aws >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y awscli
@@ -189,18 +191,21 @@ jobs:
               sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
             fi
 
-            # ✅ Fix DNS de Docker (Atlas SRV)
+            # ✅ DNS fix (Atlas SRV)
             sudo mkdir -p /etc/docker
             if [ ! -f /etc/docker/daemon.json ]; then
               echo '{\"dns\":[\"1.1.1.1\",\"8.8.8.8\"]}' | sudo tee /etc/docker/daemon.json >/dev/null
               sudo systemctl restart docker
             fi
 
-            # Variables
+            cd ~/app
+
+            # ✅ Exportar creds AWS dentro de la sesión SSH (para aws ecr get-login-password)
             export AWS_ACCESS_KEY_ID='${AWS_ACCESS_KEY_ID}'
             export AWS_SECRET_ACCESS_KEY='${AWS_SECRET_ACCESS_KEY}'
             export AWS_REGION='${AWS_REGION}'
 
+            # ✅ App/DB vars
             export DB_ENGINE='${DB_ENGINE}'
             export DB_HOST='${DB_HOST}'
             export DB_PORT='${DB_PORT}'
@@ -208,16 +213,21 @@ jobs:
             export DB_USER='${DB_USER}'
             export DB_PASSWORD='${DB_PASSWORD}'
             export MONGODB_URI='${MONGODB_URI}'
-            export APP_PORT='${APP_PORT:-8081}'
 
+            # APP_PORT seguro (sin :- dentro del ssh)
+            if [ -n '${APP_PORT}' ]; then
+              export APP_PORT='${APP_PORT}'
+            else
+              export APP_PORT='8081'
+            fi
+
+            # Image URI por tag
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
 
             echo \"Login ECR: \${ECR_REGISTRY}\"
             aws ecr get-login-password --region \"${AWS_REGION}\" \
               | sudo -E docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
-
-            cd ~/app
 
             # Elegir compose: remoto si hay URI, si no local
             if [ -n \"\${MONGODB_URI}\" ]; then
@@ -228,7 +238,7 @@ jobs:
               echo '✅ Usando MongoDB local (EC2)'
             fi
 
-            # Limpieza opcional de contenedores viejos
+            # Limpieza opcional
             sudo docker rm -f demojava-mongo demo-java-app 2>/dev/null || true
 
             # Deploy
