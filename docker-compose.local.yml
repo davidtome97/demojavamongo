@@ -1,0 +1,36 @@
+services:
+  mongo:
+    image: mongo:8
+    container_name: demojava-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USER:-demo}
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD:-demo}
+      MONGO_INITDB_DATABASE: ${DB_NAME:-demo}
+    networks: [demo-net]
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  demo-java:
+    image: ${IMAGE_URI:-demo-java-local}
+    container_name: demo-java-app
+    environment:
+      SPRING_PROFILES_ACTIVE: mongo
+
+      # LOCAL por host/port (servicio "mongo")
+      DB_HOST: mongo
+      DB_PORT: 27017
+      DB_NAME: ${DB_NAME:-demo}
+      DB_USER: ${DB_USER:-demo}
+      DB_PASSWORD: ${DB_PASSWORD:-demo}
+    ports:
+      - "${APP_PORT:-8081}:8081"
+    networks: [demo-net]
+    restart: unless-stopped
+
+networks:
+  demo-net:
+    driver: bridge
+
+volumes:
+  mongo_data:

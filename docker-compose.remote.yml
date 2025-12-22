@@ -1,12 +1,11 @@
 services:
   demo-java:
-    image: ${IMAGE_URI:-demo-java-local}
+    image: ${IMAGE_URI}
     container_name: demo-java-app
     environment:
       SPRING_PROFILES_ACTIVE: mongo
-      DB_ENGINE: mongo
 
-      # ✅ remoto SOLO por URI
+      # REMOTO SOLO por URI (nada de DB_HOST=mongo)
       SPRING_DATA_MONGODB_URI: ${MONGODB_URI}
     ports:
       - "${APP_PORT:-8081}:8081"
@@ -14,4 +13,5 @@ services:
     restart: unless-stopped
 
 networks:
-  demo-net: { driver: bridge }
+  demo-net:
+    driver: bridge
