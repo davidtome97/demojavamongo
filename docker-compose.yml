@@ -6,11 +6,13 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${DB_USER:-demo}
       MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD:-demo}
       MONGO_INITDB_DATABASE: ${DB_NAME:-demo}
-    networks:
-      - demo-net
     volumes:
       - mongo_data:/data/db
+    networks:
+      - demo-net
     restart: unless-stopped
+    profiles:
+      - local   # ⬅️ SOLO para local
 
   demo-java:
     image: ${IMAGE_URI:-demo-java-local}
@@ -19,22 +21,11 @@ services:
       SPRING_PROFILES_ACTIVE: mongo
       DB_ENGINE: mongo
 
-      # Local o remoto (si pones DB_HOST apuntando a Atlas NO sirve,
-      # Atlas debe ir por URI -> SPRING_DATA_MONGODB_URI)
-      DB_HOST: ${DB_HOST:-mongo}
-      DB_PORT: ${DB_PORT:-27017}
-
-      DB_NAME: ${DB_NAME:-demo}
-      DB_USER: ${DB_USER:-demo}
-      DB_PASSWORD: ${DB_PASSWORD:-demo}
-
-      # ✅ Atlas aquí (si existe, Spring usará esto)
-      SPRING_DATA_MONGODB_URI: ${SPRING_DATA_MONGODB_URI:-}
+      # 🔑 LA CLAVE
+      MONGODB_URI: ${MONGODB_URI:-mongodb://demo:demo@mongo:27017/demo}
 
     ports:
       - "${APP_PORT:-8081}:8081"
-    depends_on:
-      - mongo
     networks:
       - demo-net
     restart: unless-stopped
