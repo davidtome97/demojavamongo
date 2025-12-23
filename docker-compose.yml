@@ -24,7 +24,7 @@ services:
   # APP LOCAL (usa postgres del compose)
   # =========================
   demo-java-local:
-    image: ${IMAGE_URI:-demo-java-local}
+    image: ${IMAGE_URI}
     build:
       context: .
       dockerfile: Dockerfile
@@ -54,7 +54,7 @@ services:
   # APP REMOTO (RDS) - NO levanta postgres local
   # =========================
   demo-java-remote:
-    image: ${IMAGE_URI:-demo-java-local}
+    image: ${IMAGE_URI}
     build:
       context: .
       dockerfile: Dockerfile
