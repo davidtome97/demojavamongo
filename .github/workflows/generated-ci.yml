@@ -139,6 +139,9 @@ jobs:
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
+      # NUEVO: local|remote
+      DB_MODE: ${{ secrets.DB_MODE }}
+
       APP_PORT: ${{ secrets.APP_PORT }}
 
     steps:
@@ -204,23 +207,37 @@ jobs:
 
             export APP_PORT='${APP_PORT:-8081}'
 
-            # PERFIL REMOTO (CLAVE DEL FIX)
-            export COMPOSE_PROFILES=remote
+            # PERFIL según secret: local|remote (default remote)
+            DB_MODE_IN='${DB_MODE}'
+            if [ -z \"\$DB_MODE_IN\" ]; then DB_MODE_IN='remote'; fi
+            if [ \"\$DB_MODE_IN\" != 'local' ] && [ \"\$DB_MODE_IN\" != 'remote' ]; then
+              echo \"DB_MODE inválido: \$DB_MODE_IN (usa local o remote)\"
+              exit 1
+            fi
+            export COMPOSE_PROFILES=\"\$DB_MODE_IN\"
+            echo \"Deploy con perfil: \$COMPOSE_PROFILES\"
 
+            # Imagen desde ECR (solo tiene sentido en remote)
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
 
-            echo \"Login ECR: \${ECR_REGISTRY}\"
-            aws ecr get-login-password --region \"${AWS_REGION}\" \
-              | sudo -E docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
-
             cd ~/app
 
-            echo \"Deploy con perfil: \$COMPOSE_PROFILES\"
+            # bajar stack anterior
+            sudo -E docker compose -f docker-compose.yml --profile \"\$COMPOSE_PROFILES\" down --remove-orphans || true
 
-            sudo -E docker compose down --remove-orphans || true
-            sudo -E docker compose pull
-            sudo -E docker compose up -d --remove-orphans
+            if [ \"\$COMPOSE_PROFILES\" = 'remote' ]; then
+              echo \"Login ECR: \${ECR_REGISTRY}\"
+              aws ecr get-login-password --region \"${AWS_REGION}\" \
+                | sudo -E docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
+
+              # en remoto: pull y up
+              sudo -E docker compose -f docker-compose.yml --profile remote pull
+              sudo -E docker compose -f docker-compose.yml --profile remote up -d --remove-orphans
+            else
+              # en local: build y up (no pull)
+              sudo -E docker compose -f docker-compose.yml --profile local up -d --build --remove-orphans
+            fi
 
             sudo docker image prune -f
           "

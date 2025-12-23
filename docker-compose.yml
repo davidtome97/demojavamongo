@@ -28,12 +28,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: demo-java-app
+    # ⛔️ evita conflicto de nombres
+    container_name: demo-java-app-local
     profiles: ["local"]
     environment:
       SPRING_PROFILES_ACTIVE: postgres
       DB_ENGINE: postgres
 
+      # ✅ dentro del compose, el host es el NOMBRE DEL SERVICIO
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-demo}
@@ -56,18 +58,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: demo-java-app
+    # ⛔️ evita conflicto de nombres
+    container_name: demo-java-app-remote
     profiles: ["remote"]
     environment:
       SPRING_PROFILES_ACTIVE: postgres
       DB_ENGINE: postgres
 
-      # en remote los pasas por shell (o .env.remote)
-      DB_HOST: ${DB_HOST:-}
+      # ✅ en remoto: obligatorios (si falta algo, falla rápido y claro)
+      DB_HOST: ${DB_HOST:?DB_HOST required (RDS endpoint)}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-demo}
-      DB_USER: ${DB_USER:-}
-      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_USER: ${DB_USER:?DB_USER required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
     ports:
       - "${APP_PORT:-8081}:8081"
     networks:
