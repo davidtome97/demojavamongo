@@ -174,7 +174,10 @@ jobs:
       - name: Ejecutar despliegue en EC2
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
-            set -e
+            set -euo pipefail
+
+            # ---------- Helpers ----------
+            clean() { printf '%s' \"\$1\" | tr -d '\r' | tr -d '\n'; }
 
             # ---------- Dependencias ----------
             if ! command -v aws >/dev/null 2>&1; then
@@ -195,49 +198,54 @@ jobs:
               sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
             fi
 
+            cd ~/app
+
             # ---------- Perfil local|remote ----------
-            DB_MODE_IN='${DB_MODE}'
+            DB_MODE_IN=\"$(clean '${DB_MODE:-remote}')\"
             if [ -z \"\$DB_MODE_IN\" ]; then DB_MODE_IN='remote'; fi
             if [ \"\$DB_MODE_IN\" != 'local' ] && [ \"\$DB_MODE_IN\" != 'remote' ]; then
               echo \"DB_MODE inválido: \$DB_MODE_IN (usa local o remote)\"
               exit 1
             fi
             export COMPOSE_PROFILES=\"\$DB_MODE_IN\"
+            export COMPOSE_PROJECT_NAME='demo-java'
             echo \"Deploy con perfil: \$COMPOSE_PROFILES\"
 
             # ---------- Variables comunes ----------
-            export DB_ENGINE='${DB_ENGINE}'
-            export DB_PORT='${DB_PORT:-5432}'
-            export DB_NAME='${DB_NAME:-demo}'
-            export APP_PORT='${APP_PORT:-8081}'
+            export DB_ENGINE=\"$(clean '${DB_ENGINE:-postgres}')\"
+            export DB_PORT=\"$(clean '${DB_PORT:-5432}')\"
+            export DB_NAME=\"$(clean '${DB_NAME:-demo}')\"
+            export APP_PORT=\"$(clean '${APP_PORT:-8081}')\"
 
             # ---------- Remote: requiere host/user/pass + ECR ----------
             if [ \"\$COMPOSE_PROFILES\" = 'remote' ]; then
-              export DB_HOST='${DB_HOST}'
-              export DB_USER='${DB_USER}'
-              export DB_PASSWORD='${DB_PASSWORD}'
+              export DB_HOST=\"$(clean '${DB_HOST:-}')\"
+              export DB_USER=\"$(clean '${DB_USER:-}')\"
+              export DB_PASSWORD=\"$(clean '${DB_PASSWORD:-}')\"
 
               if [ -z \"\$DB_HOST\" ] || [ -z \"\$DB_USER\" ] || [ -z \"\$DB_PASSWORD\" ]; then
                 echo \"Faltan secrets para remote: DB_HOST, DB_USER, DB_PASSWORD\"
                 exit 1
               fi
 
-              export AWS_ACCESS_KEY_ID='${AWS_ACCESS_KEY_ID}'
-              export AWS_SECRET_ACCESS_KEY='${AWS_SECRET_ACCESS_KEY}'
-              export AWS_REGION='${AWS_REGION}'
+              export AWS_ACCESS_KEY_ID=\"$(clean '${AWS_ACCESS_KEY_ID}')\"
+              export AWS_SECRET_ACCESS_KEY=\"$(clean '${AWS_SECRET_ACCESS_KEY}')\"
+              export AWS_REGION=\"$(clean '${AWS_REGION}')\"
 
-              ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
-              export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
+              ECR_REGISTRY=\"$(clean '${AWS_ACCOUNT_ID}').dkr.ecr.\$(clean '${AWS_REGION}').amazonaws.com\"
+              export IMAGE_URI=\"\${ECR_REGISTRY}/$(clean '${ECR_REPOSITORY}'):\$(clean '${IMAGE_TAG}')\"
 
               echo \"Login ECR: \${ECR_REGISTRY}\"
-              aws ecr get-login-password --region \"${AWS_REGION}\" \
+              aws ecr get-login-password --region \"\${AWS_REGION}\" \
                 | sudo -E docker login --username AWS --password-stdin \"\${ECR_REGISTRY}\"
             fi
 
-            cd ~/app
-
-            # ---------- Down anterior (siempre con profile) ----------
+            # ---------- Stop stack anterior (con profile + project fijo) ----------
             sudo -E docker compose -f docker-compose.yml --profile \"\$COMPOSE_PROFILES\" down --remove-orphans || true
+
+            # Limpieza por si la red quedó pillada
+            sudo docker ps -aq --filter \"label=com.docker.compose.project=\${COMPOSE_PROJECT_NAME}\" | xargs -r sudo docker rm -f || true
+            sudo docker network ls --format '{{.Name}}' | grep -E \"^${COMPOSE_PROJECT_NAME}_\" | xargs -r sudo docker network rm || true
 
             # ---------- Up según modo ----------
             if [ \"\$COMPOSE_PROFILES\" = 'remote' ]; then
@@ -248,4 +256,5 @@ jobs:
             fi
 
             sudo docker image prune -f
+            sudo docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}'
           "
