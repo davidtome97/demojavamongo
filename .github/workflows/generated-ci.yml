@@ -131,7 +131,7 @@ jobs:
 
       IMAGE_TAG: ${{ github.sha }}
 
-      # DB secrets (válido para mongo/mysql/postgres)
+      # DB (válido para mongo / mysql / postgres)
       DB_ENGINE: ${{ secrets.DB_ENGINE }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
@@ -139,7 +139,6 @@ jobs:
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
-      # App
       APP_PORT: ${{ secrets.APP_PORT }}
 
     steps:
@@ -161,28 +160,29 @@ jobs:
       - name: Subir docker-compose.yml a EC2
         run: |
           set -e
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
+
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+            docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
 
       - name: Ejecutar despliegue en EC2
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
             set -e
 
-            # AWS CLI (para login ECR)
+            # ---------- Dependencias ----------
             if ! command -v aws >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y awscli
             fi
 
-            # Docker
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y docker.io
               sudo systemctl enable --now docker
             fi
 
-            # Docker Compose plugin (sin apt): instalar binario si no existe
             if ! sudo docker compose version >/dev/null 2>&1; then
               sudo mkdir -p /usr/local/lib/docker/cli-plugins
               sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
@@ -190,7 +190,7 @@ jobs:
               sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
             fi
 
-            # Variables (con defaults)
+            # ---------- Variables ----------
             export AWS_ACCESS_KEY_ID='${AWS_ACCESS_KEY_ID}'
             export AWS_SECRET_ACCESS_KEY='${AWS_SECRET_ACCESS_KEY}'
             export AWS_REGION='${AWS_REGION}'
@@ -202,11 +202,10 @@ jobs:
             export DB_USER='${DB_USER}'
             export DB_PASSWORD='${DB_PASSWORD}'
 
-            if [ -n '${APP_PORT}' ]; then
-              export APP_PORT='${APP_PORT}'
-            else
-              export APP_PORT='8081'
-            fi
+            export APP_PORT='${APP_PORT:-8081}'
+
+            # PERFIL REMOTO (CLAVE DEL FIX)
+            export COMPOSE_PROFILES=remote
 
             ECR_REGISTRY='${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com'
             export IMAGE_URI=\"\${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\"
@@ -217,11 +216,11 @@ jobs:
 
             cd ~/app
 
-            # Genérico: apaga el stack anterior (sirve para cualquier nombre de contenedor/motor)
-            sudo -E docker compose -f docker-compose.yml down --remove-orphans || true
+            echo \"Deploy con perfil: \$COMPOSE_PROFILES\"
 
-            # IMPORTANTE: -E para que docker compose vea IMAGE_URI/DB_*/APP_PORT
-            sudo -E docker compose -f docker-compose.yml pull
-            sudo -E docker compose -f docker-compose.yml up -d --remove-orphans
+            sudo -E docker compose down --remove-orphans || true
+            sudo -E docker compose pull
+            sudo -E docker compose up -d --remove-orphans
+
             sudo docker image prune -f
           "
