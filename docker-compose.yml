@@ -66,11 +66,11 @@ services:
       DB_ENGINE: postgres
 
       # ✅ en remoto: obligatorios (si falta algo, falla rápido y claro)
-      DB_HOST: ${DB_HOST:?DB_HOST required (RDS endpoint)}
+      DB_HOST: ${DB_HOST:-}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-demo}
-      DB_USER: ${DB_USER:?DB_USER required}
-      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
     ports:
       - "${APP_PORT:-8081}:8081"
     networks:
