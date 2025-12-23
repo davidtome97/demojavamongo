@@ -1,38 +1,75 @@
 services:
-  mongo:
-    image: mongo:8
-    container_name: demojava-mongo
+  # =========================
+  # POSTGRES LOCAL (solo perfil local)
+  # =========================
+  postgres:
+    image: postgres:16
+    container_name: demojava-postgres
+    profiles: ["local"]
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${DB_USER:-demo}
-      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD:-demo}
-      MONGO_INITDB_DATABASE: ${DB_NAME:-demo}
+      POSTGRES_DB: ${DB_NAME:-demo}
+      POSTGRES_USER: ${DB_USER:-demo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-demo}
     networks:
       - demo-net
     restart: unless-stopped
-    # En producción, recomendado NO exponer Mongo:
-    # ports:
-    #   - "${DB_PORT:-27017}:27017"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USER:-demo} -d ${DB_NAME:-demo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
 
-  demo-java:
+  # =========================
+  # APP LOCAL (usa postgres del compose)
+  # =========================
+  demo-java-local:
     image: ${IMAGE_URI:-demo-java-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: demo-java-app
+    profiles: ["local"]
     environment:
-      SPRING_PROFILES_ACTIVE: mongo
+      SPRING_PROFILES_ACTIVE: postgres
+      DB_ENGINE: postgres
 
-      DB_ENGINE: mongo
-
-      # Dentro de Docker Compose, el host debe ser el nombre del servicio
-      DB_HOST: mongo
-      DB_PORT: 27017
-
+      DB_HOST: postgres
+      DB_PORT: 5432
       DB_NAME: ${DB_NAME:-demo}
       DB_USER: ${DB_USER:-demo}
       DB_PASSWORD: ${DB_PASSWORD:-demo}
     ports:
       - "${APP_PORT:-8081}:8081"
     depends_on:
-      mongo:
-        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - demo-net
+    restart: unless-stopped
+
+  # =========================
+  # APP REMOTO (RDS) - NO levanta postgres local
+  # =========================
+  demo-java-remote:
+    image: ${IMAGE_URI:-demo-java-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: demo-java-app
+    profiles: ["remote"]
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      DB_ENGINE: postgres
+
+      # en remote los pasas por shell (o .env.remote)
+      DB_HOST: ${DB_HOST:-}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-demo}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+    ports:
+      - "${APP_PORT:-8081}:8081"
     networks:
       - demo-net
     restart: unless-stopped

@@ -2,7 +2,7 @@ package com.sistemagestionapp.demojava.service;
 
 import com.sistemagestionapp.demojava.model.Producto;
 import com.sistemagestionapp.demojava.model.mongo.ProductoMongo;
-import com.sistemagestionapp.demojava.repository.ProductoRepository;
+import com.sistemagestionapp.demojava.repository.jpa.ProductoRepository;
 import com.sistemagestionapp.demojava.repository.mongo.ProductoMongoRepository;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -22,11 +22,11 @@ public class ProductoService {
     public ProductoService(
             ObjectProvider<ProductoRepository> productoRepository,
             ObjectProvider<ProductoMongoRepository> productoMongoRepository,
-            @Value("${app.db.engine:h2}") String dbEngine
+            @Value("${DB_ENGINE:mysql}") String dbEngine
     ) {
         this.productoRepository = productoRepository.getIfAvailable();
         this.productoMongoRepository = productoMongoRepository.getIfAvailable();
-        this.dbEngine = dbEngine == null ? "h2" : dbEngine.toLowerCase();
+        this.dbEngine = dbEngine == null ? "mysql" : dbEngine.toLowerCase();
     }
 
     private boolean isMongo() {

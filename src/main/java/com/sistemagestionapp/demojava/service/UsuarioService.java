@@ -2,9 +2,8 @@ package com.sistemagestionapp.demojava.service;
 
 import com.sistemagestionapp.demojava.model.Usuario;
 import com.sistemagestionapp.demojava.model.mongo.UsuarioMongo;
-import com.sistemagestionapp.demojava.repository.UsuarioRepository;
+import com.sistemagestionapp.demojava.repository.jpa.UsuarioRepository;
 import com.sistemagestionapp.demojava.repository.mongo.UsuarioMongoRepository;
-
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.User;
@@ -14,25 +13,26 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.sistemagestionapp.demojava.repository.jpa.UsuarioRepository;
 
 @Service
 public class UsuarioService implements UserDetailsService {
 
     private final UsuarioRepository usuarioRepository;            // null si mongo
     private final UsuarioMongoRepository usuarioMongoRepository;  // null si sql
-    private final ObjectProvider<PasswordEncoder> passwordEncoderProvider;
+    private final PasswordEncoder passwordEncoder;
     private final String dbEngine;
 
     public UsuarioService(
-            ObjectProvider<UsuarioRepository> usuarioRepository,
-            ObjectProvider<UsuarioMongoRepository> usuarioMongoRepository,
-            ObjectProvider<PasswordEncoder> passwordEncoderProvider,
-            @Value("${app.db.engine:h2}") String dbEngine
+            ObjectProvider<com.sistemagestionapp.demojava.repository.jpa.UsuarioRepository> usuarioRepository,
+            ObjectProvider<com.sistemagestionapp.demojava.repository.mongo.UsuarioMongoRepository> usuarioMongoRepository,
+            PasswordEncoder passwordEncoder,
+            @Value("${DB_ENGINE:mysql}") String dbEngine
     ) {
         this.usuarioRepository = usuarioRepository.getIfAvailable();
         this.usuarioMongoRepository = usuarioMongoRepository.getIfAvailable();
-        this.passwordEncoderProvider = passwordEncoderProvider;
-        this.dbEngine = (dbEngine == null ? "h2" : dbEngine.toLowerCase());
+        this.passwordEncoder = passwordEncoder;
+        this.dbEngine = (dbEngine == null ? "mysql" : dbEngine.toLowerCase());
     }
 
     private boolean isMongo() {
@@ -82,13 +82,7 @@ public class UsuarioService implements UserDetailsService {
 
     @Transactional
     public void registrarUsuario(Usuario usuario) {
-        PasswordEncoder encoder = passwordEncoderProvider.getIfAvailable();
-        if (encoder == null) {
-            throw new IllegalStateException("No hay PasswordEncoder disponible. Revisa PasswordConfig/WebSecurityConfig.");
-        }
-
-        // ✅ en registro siempre llega password en claro
-        usuario.setPassword(encoder.encode(usuario.getPassword()));
+        usuario.setPassword(passwordEncoder.encode(usuario.getPassword()));
 
         if (isMongo()) {
             if (usuarioMongoRepository == null) throw new IllegalStateException("UsuarioMongoRepository no disponible");
@@ -98,7 +92,6 @@ public class UsuarioService implements UserDetailsService {
             um.setNombre(usuario.getNombre());
             um.setCorreo(usuario.getCorreo());
             um.setPassword(usuario.getPassword());
-
             usuarioMongoRepository.save(um);
             return;
         }

@@ -4,11 +4,9 @@
 FROM maven:3.9.9-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# 1) Copiamos solo pom para cachear dependencias
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
 
-# 2) Copiamos código y compilamos
 COPY src ./src
 RUN mvn -B -q -DskipTests clean package
 
@@ -17,6 +15,11 @@ RUN mvn -B -q -DskipTests clean package
 # =====================
 FROM eclipse-temurin:17-jre
 WORKDIR /app
+
+# CA certs en RUNTIME (donde corre Java y conecta a Atlas)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+  && update-ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/target/*.jar app.jar
 

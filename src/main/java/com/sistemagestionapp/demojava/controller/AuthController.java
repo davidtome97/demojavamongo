@@ -5,7 +5,6 @@ import com.sistemagestionapp.demojava.service.UsuarioService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.context.annotation.Profile;
 
 @Controller
 public class AuthController {
@@ -22,14 +21,13 @@ public class AuthController {
     }
 
     @GetMapping("/registro")
-    public String mostrarRegistro(Model model) {
+    public String registroForm(Model model) {
         model.addAttribute("usuario", new Usuario());
         return "registro";
     }
 
     @PostMapping("/registro")
-    public String registrar(@ModelAttribute("usuario") Usuario usuario,
-                            Model model) {
+    public String registrar(@ModelAttribute("usuario") Usuario usuario, Model model) {
 
         if (usuarioService.existePorCorreo(usuario.getCorreo())) {
             model.addAttribute("error", "Ya existe un usuario con ese correo.");
