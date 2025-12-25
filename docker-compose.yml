@@ -22,7 +22,7 @@ services:
 
   # ========================
   # APP LOCAL (MySQL local)
-  # =========================
+  # ========================
   demo-java-local:
     image: ${IMAGE_URI:-demo-java-local}
     container_name: demo-java-app-local
