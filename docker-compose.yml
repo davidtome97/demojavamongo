@@ -36,6 +36,9 @@ services:
       DB_NAME: ${DB_NAME:-demo}
       DB_USER: ${DB_USER:-demo}
       DB_PASSWORD: ${DB_PASSWORD:-demo}
+
+      # ✅ local: sin SSL
+      DB_SSLMODE: disable
     ports:
       - "${APP_PORT:-8081}:8081"
     depends_on:
@@ -56,11 +59,14 @@ services:
       SPRING_PROFILES_ACTIVE: postgres
       DB_ENGINE: postgres
 
-      DB_HOST: ${DB_HOST:-}
+      DB_HOST: ${DB_HOST:?DB_HOST requerido en remote}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-demo}
-      DB_USER: ${DB_USER:-}
-      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_USER: ${DB_USER:?DB_USER requerido en remote}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD requerido en remote}
+
+      # ✅ remote: normalmente RDS con SSL
+      DB_SSLMODE: ${DB_SSLMODE:-require}
     ports:
       - "${APP_PORT:-8081}:8081"
     networks:
