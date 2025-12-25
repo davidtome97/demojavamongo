@@ -36,7 +36,7 @@ public class UsuarioService implements UserDetailsService {
     }
 
     private boolean isMongo() {
-        return "mongo".equalsIgnoreCase(dbEngine);
+        return env.acceptsProfiles(Profiles.of("mongo"));
     }
 
     @Override

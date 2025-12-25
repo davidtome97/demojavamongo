@@ -27,7 +27,7 @@ services:
     profiles: ["local"]
     environment:
       SPRING_PROFILES_ACTIVE: mongo
-
+      DB_ENGINE: mongo
       # Local fallback
       DB_HOST: ${DB_HOST:-mongo}
       DB_PORT: ${DB_PORT:-27017}
@@ -57,7 +57,7 @@ services:
     environment:
       JAVA_TOOL_OPTIONS: "-Djdk.tls.client.protocols=TLSv1.2"
       SPRING_PROFILES_ACTIVE: mongo
-
+      DB_ENGINE: mongo
       # ✅ Atlas/remote: usa esta variable (tu config ya la respeta)
       SPRING_DATA_MONGODB_URI: ${SPRING_DATA_MONGODB_URI:-${DB_URI:-}}
 
