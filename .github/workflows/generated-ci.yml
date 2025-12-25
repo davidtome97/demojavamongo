@@ -117,10 +117,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
 
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
-
       AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
 
@@ -131,13 +128,10 @@ jobs:
 
       IMAGE_TAG: ${{ github.sha }}
 
-      # DB
       DB_ENGINE: ${{ secrets.DB_ENGINE }}
       DB_MODE: ${{ secrets.DB_MODE }}   # local | remote
       DB_PORT: ${{ secrets.DB_PORT }}
       DB_NAME: ${{ secrets.DB_NAME }}
-
-      # remote only (vacías si DB_MODE=local)
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -147,112 +141,57 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preparar clave SSH
+      - name: Preparar SSH
         run: |
           set -e
           mkdir -p ~/.ssh
           printf "%s" "${EC2_LLAVE_SSH}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
-          if [ -n "${EC2_KNOWN_HOSTS}" ]; then
-            echo "${EC2_KNOWN_HOSTS}" > ~/.ssh/known_hosts
-          else
-            ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
-          fi
-
-      - name: Subir docker-compose.yml a EC2
+      - name: Subir docker-compose.yml
         run: |
-          set -e
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
+          ssh -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "mkdir -p ~/app"
+          scp -i ~/.ssh/id_rsa docker-compose.yml "$EC2_USER@$EC2_HOST:~/app/docker-compose.yml"
 
-      - name: Deploy en EC2
+      - name: Deploy en EC2 (IAM Role)
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
-            "$EC2_USER@$EC2_HOST" \
-            "DB_MODE='${DB_MODE}' DB_ENGINE='${DB_ENGINE}' DB_PORT='${DB_PORT}' DB_NAME='${DB_NAME}' APP_PORT='${APP_PORT}' \
-            DB_HOST='${DB_HOST}' DB_USER='${DB_USER}' DB_PASSWORD='${DB_PASSWORD}' \
-            AWS_REGION='${AWS_REGION}' AWS_ACCOUNT_ID='${AWS_ACCOUNT_ID}' ECR_REPOSITORY='${ECR_REPOSITORY}' IMAGE_TAG='${IMAGE_TAG}' \
-            bash -se" <<'EOF'
-              set -euo pipefail
+          ssh -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" \
+          "DB_MODE='${DB_MODE}' DB_ENGINE='${DB_ENGINE}' DB_PORT='${DB_PORT}' DB_NAME='${DB_NAME}' \
+          DB_HOST='${DB_HOST}' DB_USER='${DB_USER}' DB_PASSWORD='${DB_PASSWORD}' APP_PORT='${APP_PORT}' \
+          AWS_REGION='${AWS_REGION}' AWS_ACCOUNT_ID='${AWS_ACCOUNT_ID}' \
+          ECR_REPOSITORY='${ECR_REPOSITORY}' IMAGE_TAG='${IMAGE_TAG}' bash -se" <<'EOF'
 
-              clean() { printf '%s' "${1:-}" | tr -d '\r' | tr -d '\n'; }
+          set -euo pipefail
+          cd ~/app
+          rm -f .env .env.local .env.remote || true
 
-              cd ~/app
-              rm -f .env .env.local .env.remote || true
+          export COMPOSE_PROJECT_NAME=demo-java
+          export COMPOSE_PROFILES="${DB_MODE:-local}"
 
-              # ---------- Dependencias ----------
-              if ! command -v aws >/dev/null 2>&1; then
-                sudo apt-get update -y
-                sudo apt-get install -y awscli
-              fi
+          export DB_ENGINE="${DB_ENGINE:-postgres}"
+          export DB_PORT="${DB_PORT:-5432}"
+          export DB_NAME="${DB_NAME:-demo}"
+          export APP_PORT="${APP_PORT:-8082}"
 
-              if ! command -v docker >/dev/null 2>&1; then
-                sudo apt-get update -y
-                sudo apt-get install -y docker.io
-                sudo systemctl enable --now docker
-              fi
+          ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          export IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
-              if ! sudo docker compose version >/dev/null 2>&1; then
-                sudo mkdir -p /usr/local/lib/docker/cli-plugins
-                sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
-                  -o /usr/local/lib/docker/cli-plugins/docker-compose
-                sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-              fi
+          echo "Deploy con perfil: $COMPOSE_PROFILES"
+          echo "IMAGE_URI=$IMAGE_URI"
 
-              # ---------- Proyecto ----------
-              export COMPOSE_PROJECT_NAME="demo-java"
+          # IAM ROLE → login funciona sin secrets
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | sudo docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
-              DB_MODE_IN="$(clean "${DB_MODE:-local}")"
-              [ -z "$DB_MODE_IN" ] && DB_MODE_IN="local"
-              if [ "$DB_MODE_IN" != "local" ] && [ "$DB_MODE_IN" != "remote" ]; then
-                echo "DB_MODE inválido: $DB_MODE_IN"
-                exit 1
-              fi
-              export COMPOSE_PROFILES="$DB_MODE_IN"
+          sudo docker compose -p "$COMPOSE_PROJECT_NAME" -f docker-compose.yml \
+            --profile "$COMPOSE_PROFILES" down --remove-orphans || true
 
-              export DB_ENGINE="$(clean "${DB_ENGINE:-postgres}")"
-              export DB_PORT="$(clean "${DB_PORT:-5432}")"
-              export DB_NAME="$(clean "${DB_NAME:-demo}")"
-              export APP_PORT="$(clean "${APP_PORT:-8082}")"
+          sudo docker compose -p "$COMPOSE_PROJECT_NAME" -f docker-compose.yml \
+            --profile "$COMPOSE_PROFILES" pull
 
-              AWS_REGION_IN="$(clean "${AWS_REGION}")"
-              AWS_ACCOUNT_ID_IN="$(clean "${AWS_ACCOUNT_ID}")"
-              ECR_REPOSITORY_IN="$(clean "${ECR_REPOSITORY}")"
-              IMAGE_TAG_IN="$(clean "${IMAGE_TAG}")"
+          sudo docker compose -p "$COMPOSE_PROJECT_NAME" -f docker-compose.yml \
+            --profile "$COMPOSE_PROFILES" up -d --remove-orphans
 
-              ECR_REGISTRY="${AWS_ACCOUNT_ID_IN}.dkr.ecr.${AWS_REGION_IN}.amazonaws.com"
-              export IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY_IN}:${IMAGE_TAG_IN}"
-
-              if [ "$COMPOSE_PROFILES" = "remote" ]; then
-                export DB_HOST="$(clean "${DB_HOST:-}")"
-                export DB_USER="$(clean "${DB_USER:-}")"
-                export DB_PASSWORD="$(clean "${DB_PASSWORD:-}")"
-
-                if [ -z "$DB_HOST" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ]; then
-                  echo "Faltan secrets para remote: DB_HOST, DB_USER, DB_PASSWORD"
-                  exit 1
-                fi
-              else
-                export DB_USER="$(clean "${DB_USER:-demo}")"
-                export DB_PASSWORD="$(clean "${DB_PASSWORD:-demo}")"
-              fi
-
-              echo "Deploy con perfil: ${COMPOSE_PROFILES}"
-              echo "IMAGE_URI=${IMAGE_URI}"
-
-              echo "Login ECR: ${ECR_REGISTRY}"
-              aws ecr get-login-password --region "${AWS_REGION_IN}" \
-                | sudo -E docker login --username AWS --password-stdin "${ECR_REGISTRY}"
-
-              sudo -E docker compose --env-file /dev/null -p "$COMPOSE_PROJECT_NAME" \
-                -f docker-compose.yml --profile "$COMPOSE_PROFILES" down --remove-orphans || true
-
-              sudo -E docker compose --env-file /dev/null -p "$COMPOSE_PROJECT_NAME" \
-                -f docker-compose.yml --profile "$COMPOSE_PROFILES" pull
-
-              sudo -E docker compose --env-file /dev/null -p "$COMPOSE_PROJECT_NAME" \
-                -f docker-compose.yml --profile "$COMPOSE_PROFILES" up -d --remove-orphans
-
-              sudo docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}'
+          sudo docker ps
           EOF
