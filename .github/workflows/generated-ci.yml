@@ -216,12 +216,22 @@ jobs:
             export IMAGE_URI="${ECR_REGISTRY}/${ECR_REPO_IN}:${IMAGE_TAG_IN}"
 
             if [ "$COMPOSE_PROFILES" = "remote" ]; then
-              export DB_HOST="$(clean "${DB_HOST:-}")"
-              export DB_USER="$(clean "${DB_USER:-}")"
-              export DB_PASSWORD="$(clean "${DB_PASSWORD:-}")"
-              if [ -z "$DB_HOST" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ]; then
-                echo "Faltan secrets para remote: DB_HOST, DB_USER, DB_PASSWORD"
-                exit 1
+              if [ "$DB_ENGINE" = "mongo" ]; then
+                export DB_URI="$(clean "${DB_URI:-}")"
+                if [ -z "$DB_URI" ]; then
+                  echo "Falta secret para mongo remoto: DB_URI"
+                  exit 1
+                fi
+                # Evita que defaults te arrastren a local
+                unset DB_HOST DB_PORT DB_USER DB_PASSWORD || true
+              else
+                export DB_HOST="$(clean "${DB_HOST:-}")"
+                export DB_USER="$(clean "${DB_USER:-}")"
+                export DB_PASSWORD="$(clean "${DB_PASSWORD:-}")"
+                if [ -z "$DB_HOST" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ]; then
+                  echo "Faltan secrets para remote SQL: DB_HOST, DB_USER, DB_PASSWORD"
+                  exit 1
+                fi
               fi
             else
               export DB_USER="$(clean "${DB_USER:-demo}")"

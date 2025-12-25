@@ -51,12 +51,11 @@ services:
     container_name: demo-java-app
     profiles: ["remote"]
     environment:
-      JAVA_TOOL_OPTIONS: "-Djdk.tls.client.protocols=TLSv1.2"
       SPRING_PROFILES_ACTIVE: mongo
       DB_ENGINE: mongo
-
-      # ✅ Remoto: UNA sola fuente de verdad
       DB_URI: ${DB_URI}
+      JAVA_TOOL_OPTIONS: "-Djdk.tls.client.protocols=TLSv1.2"
+
 
       # (opcionales)
       DB_NAME: ${DB_NAME:-demo}
