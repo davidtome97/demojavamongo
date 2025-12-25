@@ -24,18 +24,13 @@ services:
   # APP LOCAL (usa postgres del compose)
   # =========================
   demo-java-local:
-    image: ${IMAGE_URI}
-    build:
-      context: .
-      dockerfile: Dockerfile
-    # ⛔️ evita conflicto de nombres
+    image: ${IMAGE_URI:-demo-java-local}
     container_name: demo-java-app-local
     profiles: ["local"]
     environment:
       SPRING_PROFILES_ACTIVE: postgres
       DB_ENGINE: postgres
 
-      # ✅ dentro del compose, el host es el NOMBRE DEL SERVICIO
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-demo}
@@ -54,23 +49,18 @@ services:
   # APP REMOTO (RDS) - NO levanta postgres local
   # =========================
   demo-java-remote:
-    image: ${IMAGE_URI}
-    build:
-      context: .
-      dockerfile: Dockerfile
-    # ⛔️ evita conflicto de nombres
+    image: ${IMAGE_URI:-demo-java-local}
     container_name: demo-java-app-remote
     profiles: ["remote"]
     environment:
       SPRING_PROFILES_ACTIVE: postgres
       DB_ENGINE: postgres
 
-      # ✅ en remoto: obligatorios (si falta algo, falla rápido y claro)
       DB_HOST: ${DB_HOST:-}
-      DB_USER: ${DB_USER:-}
-      DB_PASSWORD: ${DB_PASSWORD:-}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-demo}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
     ports:
       - "${APP_PORT:-8081}:8081"
     networks:
