@@ -21,7 +21,7 @@ services:
       start_period: 15s
 
   # =========================
-  # APP LOCAL (usa postgres del compose)
+  # APP LOCAL usa postgres del compose
   # =========================
   demo-java-local:
     image: ${IMAGE_URI:-demo-java-local}
