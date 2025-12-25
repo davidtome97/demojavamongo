@@ -1,76 +1,59 @@
 services:
-  # =========================
-  # POSTGRES LOCAL (solo perfil local)
-  # =========================
-  postgres:
-    image: postgres:16
-    container_name: demojava-postgres
-    profiles: ["local"]
+  mysql:
+    image: mysql:8
+    container_name: demojava-mysql
+    profiles: ["local-mysql"]
     environment:
-      POSTGRES_DB: ${DB_NAME:-demo}
-      POSTGRES_USER: ${DB_USER:-demo}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-demo}
-    networks:
-      - demo-net
+      MYSQL_DATABASE: ${DB_NAME:-demo}
+      MYSQL_USER: ${DB_USER:-demo}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-demo}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpass}
+    networks: [demo-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USER:-demo} -d ${DB_NAME:-demo}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u${DB_USER:-demo} -p${DB_PASSWORD:-demo} --silent"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 15s
 
-  # ==========================
-  # APP LOCAL usa postgres del compose
-  # =========================
   demo-java-local:
     image: ${IMAGE_URI:-demo-java-local}
     container_name: demo-java-app-local
-    profiles: ["local"]
+    profiles: ["local-mysql"]
     environment:
-      SPRING_PROFILES_ACTIVE: postgres
-      DB_ENGINE: postgres
-
-      DB_HOST: postgres
-      DB_PORT: 5432
+      SPRING_PROFILES_ACTIVE: mysql
+      DB_ENGINE: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
       DB_NAME: ${DB_NAME:-demo}
       DB_USER: ${DB_USER:-demo}
       DB_PASSWORD: ${DB_PASSWORD:-demo}
-
-      # ✅ local: sin SSL
-      DB_SSLMODE: disable
+      DB_USE_SSL: "false"
     ports:
-      - "${APP_PORT:-8081}:8081"
+      - "${APP_PORT:-8082}:8081"
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
-    networks:
-      - demo-net
+    networks: [demo-net]
     restart: unless-stopped
 
-  # =========================
-  # APP REMOTO (RDS) - NO levanta postgres local
-  # =========================
   demo-java-remote:
     image: ${IMAGE_URI:-demo-java-local}
     container_name: demo-java-app-remote
-    profiles: ["remote"]
+    profiles: ["remote-mysql"]
     environment:
-      SPRING_PROFILES_ACTIVE: postgres
-      DB_ENGINE: postgres
-
-      DB_HOST: ${DB_HOST:?DB_HOST requerido en remote}
-      DB_PORT: ${DB_PORT:-5432}
+      SPRING_PROFILES_ACTIVE: mysql
+      DB_ENGINE: mysql
+      DB_HOST: ${DB_HOST:-}
+      DB_PORT: ${DB_PORT:-3306}
       DB_NAME: ${DB_NAME:-demo}
-      DB_USER: ${DB_USER:?DB_USER requerido en remote}
-      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD requerido en remote}
-
-      # ✅ remote: normalmente RDS con SSL
-      DB_SSLMODE: require
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_USE_SSL: ${DB_USE_SSL:-true}
     ports:
-      - "${APP_PORT:-8081}:8081"
-    networks:
-      - demo-net
+      - "${APP_PORT:-8082}:8081"
+    networks: [demo-net]
     restart: unless-stopped
 
 networks:
