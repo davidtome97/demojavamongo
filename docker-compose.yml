@@ -17,7 +17,7 @@ services:
       retries: 20
       start_period: 10s
 
-  # ========= APP LOCAL (con mongo del compose) =======
+  # ======== APP LOCAL (con mongo del compose) =======
   demo-java-local:
     image: ${IMAGE_URI:-demo-java-local}
     build:
