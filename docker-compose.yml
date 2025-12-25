@@ -36,13 +36,13 @@ services:
         condition: service_healthy
 
   demo-java-remote:
-    image: ${IMAGE_URI?ERROR: define IMAGE_URI (ECR image) for remote}
+    image: "${IMAGE_URI?ERROR define IMAGE_URI for remote}"
     profiles: ["remote"]
     environment:
       JAVA_TOOL_OPTIONS: "-Djdk.tls.client.protocols=TLSv1.2"
       SPRING_PROFILES_ACTIVE: mongo
       DB_ENGINE: mongo
-      DB_URI: ${DB_URI?ERROR: define DB_URI (Atlas URI) for remote}
+      DB_URI: "${DB_URI?ERROR define DB_URI for remote}"
       DB_NAME: ${DB_NAME:-demo}
     ports:
       - "${APP_PORT:-8081}:8081"
