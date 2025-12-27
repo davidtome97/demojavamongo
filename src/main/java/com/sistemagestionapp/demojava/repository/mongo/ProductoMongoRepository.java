@@ -3,8 +3,10 @@ package com.sistemagestionapp.demojava.repository.mongo;
 import com.sistemagestionapp.demojava.model.mongo.ProductoMongo;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
-public interface ProductoMongoRepository
-        extends MongoRepository<ProductoMongo, String> {
+import java.util.List;
+import java.util.Optional;
+
+public interface ProductoMongoRepository extends MongoRepository<ProductoMongo, String> {
 
     List<ProductoMongo> findByUsuarioId(String usuarioId);
 

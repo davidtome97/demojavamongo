@@ -3,10 +3,9 @@ package com.sistemagestionapp.demojava.service;
 import com.sistemagestionapp.demojava.model.Producto;
 import com.sistemagestionapp.demojava.model.Usuario;
 import com.sistemagestionapp.demojava.model.mongo.ProductoMongo;
-import com.sistemagestionapp.demojava.model.mongo.UsuarioMongo;
 import com.sistemagestionapp.demojava.repository.jpa.ProductoRepository;
+import com.sistemagestionapp.demojava.repository.jpa.UsuarioRepository;
 import com.sistemagestionapp.demojava.repository.mongo.ProductoMongoRepository;
-import com.sistemagestionapp.demojava.repository.mongo.UsuarioMongoRepository;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,18 +18,18 @@ public class ProductoService {
 
     private final ProductoRepository productoRepository;            // null si mongo
     private final ProductoMongoRepository productoMongoRepository;  // null si sql
-    private final UsuarioMongoRepository usuarioMongoRepository;    // para obtener el usuarioId de mongo
+    private final UsuarioRepository usuarioRepository;              // para SQL
     private final String dbEngine;
 
     public ProductoService(
             ObjectProvider<ProductoRepository> productoRepository,
             ObjectProvider<ProductoMongoRepository> productoMongoRepository,
-            ObjectProvider<UsuarioMongoRepository> usuarioMongoRepository,
+            ObjectProvider<UsuarioRepository> usuarioRepository,
             @Value("${DB_ENGINE:mysql}") String dbEngine
     ) {
         this.productoRepository = productoRepository.getIfAvailable();
         this.productoMongoRepository = productoMongoRepository.getIfAvailable();
-        this.usuarioMongoRepository = usuarioMongoRepository.getIfAvailable();
+        this.usuarioRepository = usuarioRepository.getIfAvailable();
         this.dbEngine = (dbEngine == null || dbEngine.isBlank()) ? "mysql" : dbEngine.toLowerCase();
     }
 
@@ -38,73 +37,83 @@ public class ProductoService {
         return "mongo".equalsIgnoreCase(dbEngine);
     }
 
-    // =========================================================
-    // LISTAR (SOLO DEL USUARIO)
-    // =========================================================
-    @Transactional(readOnly = true)
-    public List<?> listarPorUsuario(Usuario usuarioSql, String correoUsuario) {
-        if (isMongo()) {
-            if (productoMongoRepository == null) throw new IllegalStateException("ProductoMongoRepository no disponible");
-            if (usuarioMongoRepository == null) throw new IllegalStateException("UsuarioMongoRepository no disponible");
-
-            UsuarioMongo um = usuarioMongoRepository.findByCorreo(correoUsuario)
-                    .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado en Mongo: " + correoUsuario));
-
-            return productoMongoRepository.findByUsuarioId(um.getId());
+    private Usuario usuarioSqlObligatorio(String correo) {
+        if (usuarioRepository == null) {
+            throw new IllegalStateException("UsuarioRepository no disponible (perfil SQL mal configurado)");
         }
-
-        if (productoRepository == null) throw new IllegalStateException("ProductoRepository no disponible");
-        if (usuarioSql == null) throw new IllegalArgumentException("usuarioSql es obligatorio en SQL");
-
-        return productoRepository.findByPropietario(usuarioSql);
+        return usuarioRepository.findByCorreo(correo)
+                .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado: " + correo));
     }
 
     // =========================================================
-    // BUSCAR POR ID (SOLO SI ES DEL USUARIO)
+    // LISTAR SOLO PRODUCTOS DEL USUARIO
     // =========================================================
     @Transactional(readOnly = true)
-    public Object buscarPorIdDeUsuario(String id, Usuario usuarioSql, String correoUsuario) {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("id es obligatorio");
+    public List<?> listarDelUsuario(String correo) {
+        if (correo == null || correo.isBlank()) throw new IllegalArgumentException("correo obligatorio");
 
         if (isMongo()) {
-            if (productoMongoRepository == null) throw new IllegalStateException("ProductoMongoRepository no disponible");
-            if (usuarioMongoRepository == null) throw new IllegalStateException("UsuarioMongoRepository no disponible");
+            if (productoMongoRepository == null) {
+                throw new IllegalStateException("ProductoMongoRepository no disponible (perfil mongo mal configurado)");
+            }
+            // ✅ en Mongo usamos correo como usuarioId
+            return productoMongoRepository.findByUsuarioId(correo);
+        }
 
-            UsuarioMongo um = usuarioMongoRepository.findByCorreo(correoUsuario)
-                    .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado en Mongo: " + correoUsuario));
+        if (productoRepository == null) {
+            throw new IllegalStateException("ProductoRepository no disponible (perfil sql mal configurado)");
+        }
 
-            return productoMongoRepository.findByIdAndUsuarioId(id, um.getId())
+        Usuario propietario = usuarioSqlObligatorio(correo);
+        return productoRepository.findByPropietario(propietario);
+    }
+
+    // =========================================================
+    // BUSCAR POR ID SOLO SI ES DEL USUARIO
+    // =========================================================
+    @Transactional(readOnly = true)
+    public Object buscarDelUsuario(String id, String correo) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("id obligatorio");
+        if (correo == null || correo.isBlank()) throw new IllegalArgumentException("correo obligatorio");
+
+        if (isMongo()) {
+            if (productoMongoRepository == null) {
+                throw new IllegalStateException("ProductoMongoRepository no disponible (perfil mongo mal configurado)");
+            }
+            return productoMongoRepository.findByIdAndUsuarioId(id, correo)
                     .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado o no pertenece al usuario: " + id));
         }
 
-        if (productoRepository == null) throw new IllegalStateException("ProductoRepository no disponible");
-        if (usuarioSql == null) throw new IllegalArgumentException("usuarioSql es obligatorio en SQL");
+        if (productoRepository == null) {
+            throw new IllegalStateException("ProductoRepository no disponible (perfil sql mal configurado)");
+        }
 
+        Usuario propietario = usuarioSqlObligatorio(correo);
         Long longId = parseLongId(id);
-        return productoRepository.findByIdAndPropietario(longId, usuarioSql)
+
+        return productoRepository.findByIdAndPropietario(longId, propietario)
                 .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado o no pertenece al usuario: " + id));
     }
 
     // =========================================================
-    // GUARDAR/ACTUALIZAR (SIEMPRE ASIGNANDO USUARIO)
+    // GUARDAR/ACTUALIZAR (ASIGNANDO USUARIO)
     // =========================================================
     @Transactional
-    public void guardar(String id, String nombre, String descripcion, double precio, Usuario usuarioSql, String correoUsuario) {
+    public void guardar(String id, String nombre, String descripcion, double precio, String correo) {
+        if (correo == null || correo.isBlank()) throw new IllegalArgumentException("correo obligatorio");
 
         if (isMongo()) {
-            if (productoMongoRepository == null) throw new IllegalStateException("ProductoMongoRepository no disponible");
-            if (usuarioMongoRepository == null) throw new IllegalStateException("UsuarioMongoRepository no disponible");
-
-            UsuarioMongo um = usuarioMongoRepository.findByCorreo(correoUsuario)
-                    .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado en Mongo: " + correoUsuario));
+            if (productoMongoRepository == null) {
+                throw new IllegalStateException("ProductoMongoRepository no disponible (perfil mongo mal configurado)");
+            }
 
             final ProductoMongo p;
 
             if (id == null || id.isBlank()) {
                 p = new ProductoMongo();
-                p.setUsuarioId(um.getId());
+                p.setUsuarioId(correo); // ✅ dueño
             } else {
-                p = productoMongoRepository.findByIdAndUsuarioId(id, um.getId())
+                p = productoMongoRepository.findByIdAndUsuarioId(id, correo)
                         .orElseThrow(() -> new IllegalArgumentException("No puedes editar un producto que no es tuyo: " + id));
             }
 
@@ -116,17 +125,19 @@ public class ProductoService {
             return;
         }
 
-        if (productoRepository == null) throw new IllegalStateException("ProductoRepository no disponible");
-        if (usuarioSql == null) throw new IllegalArgumentException("usuarioSql es obligatorio en SQL");
+        if (productoRepository == null) {
+            throw new IllegalStateException("ProductoRepository no disponible (perfil sql mal configurado)");
+        }
+
+        Usuario propietario = usuarioSqlObligatorio(correo);
 
         final Producto p;
-
         if (id == null || id.isBlank()) {
             p = new Producto();
-            p.setPropietario(usuarioSql); // ✅ en SQL
+            p.setPropietario(propietario); // ✅ dueño
         } else {
             Long longId = parseLongId(id);
-            p = productoRepository.findByIdAndPropietario(longId, usuarioSql)
+            p = productoRepository.findByIdAndPropietario(longId, propietario)
                     .orElseThrow(() -> new IllegalArgumentException("No puedes editar un producto que no es tuyo: " + id));
         }
 
@@ -138,32 +149,33 @@ public class ProductoService {
     }
 
     // =========================================================
-    // BORRAR (SOLO SI ES DEL USUARIO)
+    // BORRAR SOLO SI ES DEL USUARIO
     // =========================================================
     @Transactional
-    public void borrarPorId(String id, Usuario usuarioSql, String correoUsuario) {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("id es obligatorio");
+    public void borrar(String id, String correo) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("id obligatorio");
+        if (correo == null || correo.isBlank()) throw new IllegalArgumentException("correo obligatorio");
 
         if (isMongo()) {
-            if (productoMongoRepository == null) throw new IllegalStateException("ProductoMongoRepository no disponible");
-            if (usuarioMongoRepository == null) throw new IllegalStateException("UsuarioMongoRepository no disponible");
+            if (productoMongoRepository == null) {
+                throw new IllegalStateException("ProductoMongoRepository no disponible (perfil mongo mal configurado)");
+            }
 
-            UsuarioMongo um = usuarioMongoRepository.findByCorreo(correoUsuario)
-                    .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado en Mongo: " + correoUsuario));
-
-            ProductoMongo p = productoMongoRepository.findByIdAndUsuarioId(id, um.getId())
+            ProductoMongo p = productoMongoRepository.findByIdAndUsuarioId(id, correo)
                     .orElseThrow(() -> new IllegalArgumentException("No puedes borrar un producto que no es tuyo: " + id));
 
             productoMongoRepository.delete(p);
             return;
         }
 
-        if (productoRepository == null) throw new IllegalStateException("ProductoRepository no disponible");
-        if (usuarioSql == null) throw new IllegalArgumentException("usuarioSql es obligatorio en SQL");
+        if (productoRepository == null) {
+            throw new IllegalStateException("ProductoRepository no disponible (perfil sql mal configurado)");
+        }
 
+        Usuario propietario = usuarioSqlObligatorio(correo);
         Long longId = parseLongId(id);
 
-        Producto p = productoRepository.findByIdAndPropietario(longId, usuarioSql)
+        Producto p = productoRepository.findByIdAndPropietario(longId, propietario)
                 .orElseThrow(() -> new IllegalArgumentException("No puedes borrar un producto que no es tuyo: " + id));
 
         productoRepository.delete(p);
