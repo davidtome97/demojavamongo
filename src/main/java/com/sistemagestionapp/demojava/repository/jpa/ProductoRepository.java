@@ -1,16 +1,21 @@
 package com.sistemagestionapp.demojava.repository.jpa;
 
 import com.sistemagestionapp.demojava.model.Producto;
+import com.sistemagestionapp.demojava.model.Usuario;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
+import java.util.Optional;
+
 /**
- * Esta interfaz la utilizo como repositorio para acceder a los datos de productos
- * en la base de datos.
- * Al extender de {@link JpaRepository}, heredo automáticamente todos los métodos
- * necesarios para realizar operaciones CRUD sobre la entidad {@link Producto},
- * sin necesidad de implementarlos manualmente.
+ * Repositorio JPA para la entidad Producto.
+ * Permite acceder únicamente a los productos asociados a un usuario concreto.
  *
- * @author David Tomé Arnáiz
+ * @author David
  */
 public interface ProductoRepository extends JpaRepository<Producto, Long> {
+
+    List<Producto> findByPropietario(Usuario propietario);
+
+    Optional<Producto> findByIdAndPropietario(Long id, Usuario propietario);
 }
